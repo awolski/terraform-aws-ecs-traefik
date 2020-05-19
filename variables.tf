@@ -116,10 +116,12 @@ variable "traefik_domain" {
 }
 
 variable "traefik_dashboard_username" {
-  default = "awolski"
+  description = "The traefik dashboard username"
+  type        = string
 }
 
 variable "traefik_dashboard_password" {
-  default = "thisisapasswordyoucannotguess"
+  description = "The traefik dashboard password"
+  type        = string
 }
 
