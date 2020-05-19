@@ -1,0 +1,15 @@
+#!/bin/bash
+echo ECS_CLUSTER=${ecs_cluster} >> /etc/ecs/ecs.config
+
+# Install AWS CLI version 2
+sudo yum install -y unzip
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
+
+# Associate Elastic IP with this instance
+instance_id=$(ec2-metadata -i | sed 's/^.*: \(.*\)/\1/g')
+aws ec2 associate-address --allocation-id=${eip_allocation_id} --instance-id=$${instance_id}
+
+# Create directory for Let's encrypt certificates
+sudo mkdir /letsencrypt

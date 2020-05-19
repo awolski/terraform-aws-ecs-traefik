@@ -1,2 +1,4 @@
-# terraform-aws-ecs-traefik
-A Terraform Module for how to run Traefik as a load balancer on a single instance ECS cluster
+# ECS Traefik Module 
+
+This repo contains a Module for how to deploy [Traefik](https://docs.traefik.io/) on [ECS](https://aws.amazon.com/ecs/).
+
