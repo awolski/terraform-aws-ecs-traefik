@@ -124,4 +124,3 @@ variable "traefik_dashboard_password" {
   description = "The traefik dashboard password"
   type        = string
 }
-
