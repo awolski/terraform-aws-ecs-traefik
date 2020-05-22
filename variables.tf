@@ -1,29 +1,30 @@
 # ---------------------------------------------------------------------------------------------------------------------
+# ENVIRONMENT VARIABLES
+# Define these secrets as environment variables
+# ---------------------------------------------------------------------------------------------------------------------
+
+# AWS_ACCESS_KEY_ID
+# AWS_SECRET_ACCESS_KEY
+# AWS_DEFAULT_REGION
+
+
+# ---------------------------------------------------------------------------------------------------------------------
 # REQUIRED PARAMETERS
 # You must provide a value for each of these parameters.
 # ---------------------------------------------------------------------------------------------------------------------
 
-variable "service_name" {
-  description = "The name of the service (e.g. traefik-stage). This variable is used to namespace all resources created by this module."
+variable "traefik_domain" {
+  description = "The domain at which the traefik dashboard will be hosted, e.g. traefik.example.com"
   type        = string
 }
 
-variable "ecs_cluster" {
-  description = "The name of the ECS cluster to logically associate resources."
-}
-
-variable "ami_id" {
-  description = "The ID of the AMI to run in the ECS cluster. Should be an AMI that has the Amazon ECS container agent installed."
+variable "traefik_dashboard_username" {
+  description = "The traefik dashboard username."
   type        = string
 }
 
-variable "instance_type" {
-  description = "The type of the EC2 Instance to run for the traefik service (e.g. t2.micro)."
-  type        = string
-}
-
-variable "vpc_id" {
-  description = "The ID of the VPC in which to deploy the traefik service."
+variable "traefik_dashboard_password" {
+  description = "The traefik dashboard password"
   type        = string
 }
 
@@ -31,6 +32,36 @@ variable "vpc_id" {
 # OPTIONAL PARAMETERS
 # These parameters have reasonable defaults.
 # ---------------------------------------------------------------------------------------------------------------------
+
+variable "ecs_cluster" {
+  description = "The name of the ECS cluster to logically associate resources. Uses default cluster if not supplied."
+  type        = string
+  default     = null
+}
+
+variable "ami_id" {
+  description = "The ID of the AMI to run in the ECS cluster. Should be an AMI that has the Amazon ECS container agent installed."
+  type        = string
+  default     = null
+}
+
+variable "instance_type" {
+  description = "The type of the EC2 Instance to run for the traefik service (e.g. t2.micro)."
+  type        = string
+  default     = "t2.micro"
+}
+
+variable "service_name" {
+  description = "The name of the service (e.g. traefik-stage). This variable is used to namespace all resources created by this module."
+  type        = string
+  default     = "traefik"
+}
+
+variable "vpc_id" {
+  description = "The ID of the VPC in which to deploy the traefik service. Uses default VPC if not supplied."
+  type        = string
+  default     = null
+}
 
 variable "subnet_ids" {
   description = "The subnet IDs into which the EC2 Instances should be deployed."
@@ -41,7 +72,7 @@ variable "subnet_ids" {
 variable "ssh_key_name" {
   description = "The name of an EC2 Key Pair that can be used to SSH to the EC2 Instances in this cluster. Set to an empty string to not associate a Key Pair."
   type        = string
-  default     = ""
+  default     = null
 }
 
 variable "allowed_ssh_cidr_blocks" {
@@ -81,6 +112,7 @@ variable "tags" {
 variable "socket_proxy_image" {
   description = "The Docker socket-proxy image to use, in the form [registry]/repository/image:tag. E.g. tecnativa/docker-socket-proxy:latest"
   type        = string
+  default     = "tecnativa/docker-socket-proxy"
 }
 
 variable "socket_proxy_memory" {
@@ -92,6 +124,7 @@ variable "socket_proxy_memory" {
 variable "traefik_image" {
   description = "The traefik docker image to use, in the form [registry]/repository/image:tag. E.g. traefik:v2.1"
   type        = string
+  default     = "traefik:v2.1"
 }
 
 variable "traefik_memory" {
@@ -106,22 +139,7 @@ variable "lets_encrypt_acme_email" {
 }
 
 variable "allowed_inbound_cidr_blocks" {
-  description = "A list of CIDR-formatted IP address ranges from which the ECS instance will allow connections to Traefik"
+  description = "A list of CIDR-formatted IP address ranges from which the ECS instance will allow connections to Traefik. Access required by Lets Encrypt for TLS certificate validation."
   type        = list(string)
+  default     = ["0.0.0.0/0"]
 }
-
-variable "traefik_domain" {
-  description = "The email address to use for automatic certificates with Let's Encrypt"
-  type        = string
-}
-
-variable "traefik_dashboard_username" {
-  description = "The traefik dashboard username"
-  type        = string
-}
-
-variable "traefik_dashboard_password" {
-  description = "The traefik dashboard password"
-  type        = string
-}
-
