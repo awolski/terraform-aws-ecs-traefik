@@ -8,6 +8,39 @@ terraform {
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
+# LOCAL VARIABLES USED IN MULTIPLE PLACES
+# ---------------------------------------------------------------------------------------------------------------------
+
+locals {
+  ecs_cluster = var.ecs_cluster == null ? "default" : var.ecs_cluster
+}
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# AUTOMATICALLY LOOK UP THE LATEST ECS OPTIMISED AMI
+# ---------------------------------------------------------------------------------------------------------------------
+
+data "aws_ami" "ecs_optimised" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+
+  filter {
+    name   = "is-public"
+    values = ["true"]
+  }
+
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-ecs-hvm-*"]
+  }
+}
+
+# ---------------------------------------------------------------------------------------------------------------------
 # CREATE AN AUTO SCALING GROUP (ASG) IN WHICH TO RUN ECS CONTAINER INSTANCES
 # ---------------------------------------------------------------------------------------------------------------------
 
@@ -18,7 +51,7 @@ resource "aws_autoscaling_group" "autoscaling_group" {
   }
 
   name_prefix         = "${var.service_name}-"
-  vpc_zone_identifier = var.subnet_ids
+  vpc_zone_identifier = data.aws_subnet_ids.default.ids
 
   # We only want one instance of the Traefik EC2 Container Instance in operation
   desired_capacity = 1
@@ -49,7 +82,7 @@ resource "aws_autoscaling_group" "autoscaling_group" {
 resource "aws_launch_template" "launch_template" {
   name_prefix = "${var.service_name}-"
 
-  image_id      = var.ami_id
+  image_id      = var.ami_id == null ? data.aws_ami.ecs_optimised.image_id : var.ami_id
   instance_type = var.instance_type
   key_name      = var.ssh_key_name
   ebs_optimized = false
@@ -66,7 +99,7 @@ resource "aws_launch_template" "launch_template" {
   # Associate the instance with ECS cluster, assign the Elastic IP with the new instance
   # and create a directory to store lets encrypt certificates
   user_data = base64encode(
-    templatefile("${path.module}/user_data.sh.tmpl", { ecs_cluster = var.ecs_cluster, eip_allocation_id = aws_eip.elastic_ip.id })
+    templatefile("${path.module}/user_data.sh.tmpl", { ecs_cluster = local.ecs_cluster, eip_allocation_id = aws_eip.elastic_ip.id })
   )
 }
 
@@ -80,6 +113,10 @@ resource "aws_security_group" "lc_security_group" {
   vpc_id      = var.vpc_id
 }
 
+# ---------------------------------------------------------------------------------------------------------------------
+# ALLOW INBOUND TRAFFIC on 443
+# ---------------------------------------------------------------------------------------------------------------------
+
 resource "aws_security_group_rule" "allow_https_inbound" {
   type        = "ingress"
   from_port   = 443
@@ -91,6 +128,8 @@ resource "aws_security_group_rule" "allow_https_inbound" {
 }
 
 resource "aws_security_group_rule" "allow_ssh_inbound" {
+  count = length(var.allowed_ssh_cidr_blocks) > 0 ? 1 : 0
+
   type        = "ingress"
   from_port   = var.ssh_port
   to_port     = var.ssh_port
@@ -224,51 +263,43 @@ resource "aws_ecs_task_definition" "traefik" {
       {
         "name": "socket-proxy",
         "image": "${var.socket_proxy_image}",
+        "cpu": 0,
         "memory": ${var.socket_proxy_memory},
+        "portMappings": [],
+
         "essential": true,
-        "privileged": true,
-        "mountPoints": [
-          {
-            "readOnly": true,
-            "containerPath": "/var/run/docker.sock",
-            "sourceVolume": "docker-daemon"
-          }
-        ],
         "environment": [
           {
             "name": "CONTAINERS",
             "value": "1"
           }
-        ]
+        ],
+        "mountPoints": [
+          {
+            "sourceVolume": "docker-daemon",
+            "containerPath": "/var/run/docker.sock",
+            "readOnly": true
+          }
+        ],
+        "volumesFrom": [],
+        "privileged": true
       },
       {
         "name": "traefik",
         "image": "${var.traefik_image}",
+        "cpu": 0,
         "memory": ${var.traefik_memory},
-        "essential": true,
-        "dependsOn": [
-          {
-            "containerName": "socket-proxy",
-            "condition": "START"
-          }
-        ],
-        "portMappings": [
-          {
-            "hostPort": 443,
-            "protocol": "tcp",
-            "containerPort": 443
-          }
-        ],
         "links": [
           "socket-proxy:socket-proxy"
         ],
-        "mountPoints": [
+        "portMappings": [
           {
-            "readOnly": false,
-            "containerPath": "/letsencrypt",
-            "sourceVolume": "letsencrypt"
+            "containerPort": 443,
+            "hostPort": 443,
+            "protocol": "tcp"
           }
         ],
+        "essential": true,
         "command": [
           "--api.dashboard=true",
           "--providers.docker.endpoint=tcp://socket-proxy:2375",
@@ -279,13 +310,28 @@ resource "aws_ecs_task_definition" "traefik" {
           "--certificatesresolvers.myresolver.acme.email=${var.lets_encrypt_acme_email}",
           "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
         ],
+        "environment": [],
+        "mountPoints": [
+          {
+            "sourceVolume": "letsencrypt",
+            "containerPath": "/letsencrypt",
+            "readOnly": false
+          }
+        ],
+        "volumesFrom": [],
+        "dependsOn": [
+          {
+            "containerName": "socket-proxy",
+            "condition": "START"
+          }
+        ],
         "dockerLabels": {
           "traefik.enable": "true",
+          "traefik.http.middlewares.auth.basicauth.users": "${var.traefik_dashboard_username}:${var.traefik_dashboard_password}",
+          "traefik.http.routers.api.entrypoints": "websecure",
+          "traefik.http.routers.api.middlewares": "auth",
           "traefik.http.routers.api.rule": "Host(`${var.traefik_domain}`)",
           "traefik.http.routers.api.service": "api@internal",
-          "traefik.http.routers.api.middlewares": "auth",
-          "traefik.http.middlewares.auth.basicauth.users": "${var.traefik_dashboard_username}:${bcrypt(var.traefik_dashboard_password)}",
-          "traefik.http.routers.api.entrypoints": "websecure",
           "traefik.http.routers.api.tls.certresolver": "myresolver"
         }
       }
@@ -295,8 +341,26 @@ EOF
 
 resource "aws_ecs_service" "traefik" {
   name            = var.service_name
-  cluster         = var.ecs_cluster
+  cluster         = local.ecs_cluster
   launch_type     = "EC2"
   task_definition = aws_ecs_task_definition.traefik.arn
   desired_count   = 1
+}
+
+# ---------------------------------------------------------------------------------------------------------------------
+# DEPLOY IN THE DEFAULT VPC AND SUBNETS
+# Using the default VPC and subnets makes this example easy to run and test, but it means Consul is accessible from the
+# public Internet. For a production deployment, we strongly recommend deploying into a custom VPC with private subnets.
+# ---------------------------------------------------------------------------------------------------------------------
+
+data "aws_vpc" "default" {
+  default = var.vpc_id == null ? true : false
+  id      = var.vpc_id
+}
+
+data "aws_subnet_ids" "default" {
+  vpc_id = data.aws_vpc.default.id
+}
+
+data "aws_region" "current" {
 }

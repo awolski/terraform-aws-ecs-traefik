@@ -1,3 +1,7 @@
+output "elastic_ip" {
+  value = aws_eip.elastic_ip.public_ip
+}
+
 output "asg_name" {
   value = aws_autoscaling_group.autoscaling_group.name
 }
